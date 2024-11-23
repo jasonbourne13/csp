@@ -1,6 +1,8 @@
+import copy
 import typing
 from datetime import datetime, timedelta
 from enum import IntEnum
+from typing import TypeVar, Union
 from uuid import uuid4
 
 import csp
@@ -13,12 +15,13 @@ from csp.adapters.utils import (
     MsgMapper,
     RawBytesMessageMapper,
     RawTextMessageMapper,
+    hash_mutable,
 )
 from csp.impl.wiring import input_adapter_def, output_adapter_def, status_adapter_def
 from csp.lib import _kafkaadapterimpl
 
 _ = BytesMessageProtoMapper, DateTimeType, JSONTextMessageMapper, RawBytesMessageMapper, RawTextMessageMapper
-T = typing.TypeVar("T")
+T = TypeVar("T")
 
 
 class KafkaStatusMessageType(IntEnum):
@@ -39,7 +42,7 @@ class KafkaAdapterManager:
     def __init__(
         self,
         broker,
-        start_offset: typing.Union[KafkaStartOffset, timedelta, datetime] = None,
+        start_offset: Union[KafkaStartOffset, timedelta, datetime] = None,
         group_id: str = None,
         group_id_prefix: str = "",
         max_threads=4,
@@ -84,13 +87,12 @@ class KafkaAdapterManager:
         }
 
         if group_id is None:
-            # If user didnt request a group_id we dont commit to allow multiple consumers to get the same stream of data
-            consumer_properties["group.id"] = group_id_prefix + str(uuid4())
             consumer_properties["enable.auto.commit"] = "false"
             consumer_properties["auto.commit.interval.ms"] = "0"
         else:
             consumer_properties["auto.offset.reset"] = "earliest"
 
+        self._group_id_prefix = group_id_prefix
         self._properties = {
             "start_offset": start_offset.value if isinstance(start_offset, KafkaStartOffset) else start_offset,
             "max_threads": max_threads,
@@ -111,8 +113,8 @@ class KafkaAdapterManager:
                 }
             )
 
+        rd_kafka_conf_options = rd_kafka_conf_options.copy() if rd_kafka_conf_options else {}
         if debug:
-            rd_kafka_conf_options = rd_kafka_conf_options.copy() if rd_kafka_conf_options else {}
             rd_kafka_conf_options["debug"] = "all"
             # Force start_offset to none so we dont block on pull adapter and let status msgs through
             self._properties["start_offset"] = None
@@ -132,7 +134,7 @@ class KafkaAdapterManager:
         # Leave key None to subscribe to all messages on the topic
         # Note that if you subscribe to all messages, they are always flagged as "live" and cant be replayed in engine time
         key=None,
-        field_map: typing.Union[dict, str] = None,
+        field_map: Union[dict, str] = None,
         meta_field_map: dict = None,
         push_mode: csp.PushMode = csp.PushMode.LAST_VALUE,
         adjust_out_of_order_time: bool = False,
@@ -155,8 +157,21 @@ class KafkaAdapterManager:
         return _kafka_input_adapter_def(self, ts_type, properties, push_mode)
 
     def publish(
-        self, msg_mapper: MsgMapper, topic: str, key: str, x: ts["T"], field_map: typing.Union[dict, str] = None
+        self,
+        msg_mapper: MsgMapper,
+        topic: str,
+        key: typing.Union[str, typing.List],
+        x: ts["T"],
+        field_map: typing.Union[dict, str] = None,
     ):
+        """
+        :param msg_mapper - MsgMapper object to manage mapping struct to message protocol
+        :param topic - topic to publish to
+        :param key   - a string field of the struct type being published that will be used as the dynamic key to publish to.
+                       key can also be a list of fields to reach into a nested struct field to be used as the key
+        :param x     - timeseries of a Struct type to publish out
+        :param field_map - option fieldmap from struct fieldname -> published field name
+        """
         if isinstance(field_map, str):
             field_map = {"": field_map}
 
@@ -179,9 +194,25 @@ class KafkaAdapterManager:
         ts_type = Status
         return status_adapter_def(self, ts_type, push_mode)
 
+    def __hash__(self):
+        return hash((self._group_id_prefix, hash_mutable(self._properties)))
+
+    def __eq__(self, other):
+        return (
+            isinstance(other, KafkaAdapterManager)
+            and self._group_id_prefix == other._group_id_prefix
+            and self._properties == other._properties
+        )
+
     def _create(self, engine, memo):
         """method needs to return the wrapped c++ adapter manager"""
-        return _kafkaadapterimpl._kafka_adapter_manager(engine, self._properties)
+        # If user didnt request a group_id we dont commit to allow multiple consumers to get the same stream of data
+        # We defer generation of unique group id to this point after properties can be sanely memoized
+        properties = self._properties
+        if properties["rd_kafka_consumer_conf_properties"]["group.id"] is None:
+            properties = copy.deepcopy(properties)
+            properties["rd_kafka_consumer_conf_properties"]["group.id"] = self._group_id_prefix + str(uuid4())
+        return _kafkaadapterimpl._kafka_adapter_manager(engine, properties)
 
 
 _kafka_input_adapter_def = input_adapter_def(

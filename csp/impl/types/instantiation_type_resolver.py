@@ -34,7 +34,7 @@ class UpcastRegistry(object):
             if CspTypingUtils.is_generic_container(expected_type):
                 expected_type_base = CspTypingUtils.get_orig_base(expected_type)
                 if expected_type_base is new_type:
-                    return expected_type
+                    return expected_type_base  # If new_type is Generic and expected type is Generic[T], return Generic
                 if CspTypingUtils.is_generic_container(new_type):
                     expected_origin = CspTypingUtils.get_origin(expected_type)
                     new_type_origin = CspTypingUtils.get_origin(new_type)
@@ -99,14 +99,7 @@ class ContainerTypeVarResolutionError(TypeError):
 class TypeMismatchError(TypeError):
     @classmethod
     def pretty_typename(cls, typ):
-        if CspTypingUtils.is_generic_container(typ):
-            return str(typ)
-        elif CspTypingUtils.is_forward_ref(typ):
-            return cls.pretty_typename(typ.__forward_arg__)
-        elif isinstance(typ, type):
-            return typ.__name__
-        else:
-            return str(typ)
+        return CspTypingUtils.pretty_typename(typ)
 
     @classmethod
     def get_tvar_info_str(cls, tvar_info):
@@ -557,10 +550,7 @@ class _InstanceTypeResolverBase(metaclass=ABCMeta):
             else:
                 return False
         if len(arg) == 0:
-            if raise_on_error:
-                raise ContainerTypeVarResolutionError(self._function_name, tvar, arg)
-            else:
-                return None
+            return container_typ
         res = None
         if isinstance(arg, set):
             first_val = arg.__iter__().__next__()

@@ -72,24 +72,24 @@ your users.
 ### Preparing and tagging a release
 
 Follow these steps when it's time to tag a new release. Before doing
-this, you will need to ensure `bump2version` is installed into your
+this, you will need to ensure `bump-my-version` is installed into your
 development environment.
 
 > \[!NOTE\]
-> The following steps assume you are pushing to the main `Point72/csp`
-> repo. If you are working from a personal fork, use the corresponding
-> remote (e.g. `upstream`) instead of `origin` in all git commands.
+> If you are working on the main `Point72/csp` repository, set the
+> remote as `origin` in all git commands. If you are working off a personal fork,
+> use the corresponding remote of the main repository (e.g. `upstream`).
 > Ensure tags are still pushed to `Point72/csp` directly.
 
 1. Ensure your local clone of `csp` is synced up with GitHub, including
    any tags that have been pushed since you last synced:
 
    ```bash
-   git pull upstream main --tags
+   git pull <remote> main --tags
    ```
 
 1. Make a branch and update version numbers in your local clone using
-   the `bump2version` integration in the Makefile.
+   the `bump-my-version` integration in the Makefile.
 
    First, make a branch that will be pushed to the main `csp`
    repository. Using a name like `release/v0.3.4` should avoid any
@@ -99,7 +99,7 @@ development environment.
    git checkout -b release/v0.x.x
    ```
 
-   You can update the version number in the codebase using `bump2version`. For a
+   You can update the version number in the codebase using `bump-my-version`. For a
    bugfix release, you would do:
 
    ```bash
@@ -127,7 +127,7 @@ development environment.
 
 1. Tag the release
 
-   Use the version number `bump2version` generated and make sure the
+   Use the version number `bump-my-version` generated and make sure the
    tag name begins with a `v`.
 
    ```bash
@@ -137,7 +137,7 @@ development environment.
 1. Push the tag to GitHub using the tag name created in the previous step.
 
    ```bash
-   git push origin tag v0.2.0
+   git push <remote> tag v0.2.0
    ```
 
    You will need access in the repository settings to be able to push
